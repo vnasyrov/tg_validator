@@ -1,50 +1,56 @@
-# Для подключение библиотеки telebot нужно в google colab добавить: !pip install pyTelegramBotAPI
-from telebot import TeleBot, types
+import io
 import json
+import os
 
-bot = TeleBot(token='6473355349:AAF5dkC83SHWKgsBUmqOMQhhMcB1jqUr2Rs', parse_mode='html') # создание бота
+from telebot import TeleBot
+
+bot = TeleBot(os.environ["BOT_TOKEN"])
 
 
-# обработчик команды '/start'
-@bot.message_handler(commands=['start'])
-def start_command_handler(message: types.Message):
-    # отправляем ответ на команду '/start'
-    bot.send_message(
-        chat_id=message.chat.id, # id чата, в который необходимо направить сообщение
-        text='Хеллоу! Я тут из JSONчика 👶🏻 делаю JSONище 👨🏻\nВведи свой JSONчик в виде строки:', # текст сообщения
+@bot.message_handler(commands=["start", "help"])
+def start(message):
+    bot.reply_to(
+        message,
+        "Отправьте JSON текстом — проверю синтаксис "
+        "и верну отформатированный результат.",
     )
 
-# обработчик всех остальных сообщений
-@bot.message_handler()
-def message_handler(message: types.Message):
+
+@bot.message_handler(content_types=["text"])
+def validate_json(message):
     try:
-        # пытаемся распарсить JSON из текста сообщения
         payload = json.loads(message.text)
-    except json.JSONDecodeError as ex:
-        # при ошибке взникнет исключение 'json.JSONDecodeError'
-        # преобразовываем исключение в строку и выводим пользователю
-        bot.send_message(
-            chat_id=message.chat.id,
-            text=f'При обработке произошла ошибка:\n<code>{str(ex)}</code>'
+    except json.JSONDecodeError as error:
+        bot.reply_to(
+            message,
+            f"Ошибка JSON: {error.msg}\n"
+            f"Строка {error.lineno}, столбец {error.colno}.",
         )
-        # выходим из функции
         return
-    
-    # если исключения не возникло - значит был введен корректный JSON
-    # форматируем его в красивый текст :) (отступ 2 пробела на уровень, сортировать ключи по алфавиту)
-    text = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
-    # и выводим пользователю
-    bot.send_message(
-        chat_id=message.chat.id,
-        text=f'JSON:\n<code>{text}</code>'
+
+    formatted = json.dumps(
+        payload,
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=False,
     )
 
+    # Большие результаты отправляем файлом.
+    if len(formatted.encode("utf-8")) > 3500:
+        document = io.BytesIO(formatted.encode("utf-8"))
+        document.name = "formatted.json"
+        bot.send_document(
+            message.chat.id,
+            document,
+            caption="JSON корректен.",
+        )
+    else:
+        bot.reply_to(message, f"JSON корректен:\n\n{formatted}")
 
-# главная функция программы
-def main():
-    # запускаем нашего бота
-    bot.infinity_polling()
 
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    bot.infinity_polling(
+        timeout=30,
+        long_polling_timeout=30,
+        allowed_updates=["message"],
+    )
